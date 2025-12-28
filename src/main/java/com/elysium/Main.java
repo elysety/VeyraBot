@@ -11,35 +11,36 @@ import net.dv8tion.jda.api.entities.Guild;
 import net.dv8tion.jda.api.utils.ChunkingFilter;
 import net.dv8tion.jda.api.utils.MemberCachePolicy;
 import net.dv8tion.jda.api.interactions.commands.build.SlashCommandData;
-import com.sun.net.httpserver.HttpServer;
-import java.net.InetSocketAddress;
 
+import java.io.FileInputStream;
+import java.io.IOException;
 import java.util.List;
+import java.util.Properties;
 import java.util.Random;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 public class Main {
-    public static void main(String[] args) throws InterruptedException, java.io.IOException {
-        // Look for "TOKEN" in Render's environment variables
-        String token = System.getenv("TOKEN");
-        String testGuildId = System.getenv("GUILD_ID");
+    public static void main(String[] args) throws InterruptedException {
+        Properties prop = new Properties();
+        String token;
+        String testGuildId;
 
-        if (token == null || token.isEmpty()) {
-            System.err.println("ERROR: TOKEN environment variable not set!");
+        // Load config.properties
+        try (FileInputStream fis = new FileInputStream("config.properties")) {
+            prop.load(fis);
+            token = prop.getProperty("token");
+            testGuildId = prop.getProperty("guild_id");
+        } catch (IOException e) {
+            System.err.println("CRITICAL ERROR: Could not find config.properties in project root!");
             return;
         }
 
-        // Dummy Web Server for Render (keeps the service alive)
-        HttpServer server = HttpServer.create(new InetSocketAddress(8080), 0);
-        server.createContext("/", exchange -> {
-            String response = "Veyra 1.0 is online.";
-            exchange.sendResponseHeaders(200, response.length());
-            exchange.getResponseBody().write(response.getBytes());
-            exchange.getResponseBody().close();
-        });
-        server.start();
+        if (token == null || token.isEmpty()) {
+            System.err.println("ERROR: Token is missing in config.properties!");
+            return;
+        }
 
         CommandManager manager = new CommandManager();
         initCommands(manager);
@@ -56,10 +57,8 @@ public class Main {
                 .map(ICommand::getData)
                 .collect(Collectors.toList());
 
-        // Wipe global commands to sync correctly
-        jda.updateCommands().queue();
-
-        if (testGuildId != null) {
+        // Sync commands to your dev guild
+        if (testGuildId != null && !testGuildId.isEmpty()) {
             Guild devGuild = jda.getGuildById(testGuildId);
             if (devGuild != null) {
                 devGuild.updateCommands().addCommands(commandData).queue();
@@ -99,10 +98,6 @@ public class Main {
                     "Veyra 1.0 | Made by elysety",
                     "Monitoring Elysium 🌌",
                     "Is %s actually a secret agent? 🕵️",
-                    "Breaking news: %s is too cool.",
-                    "%s smells like success. 🍪",
-                    "Watching %s carry this server. 🏆",
-                    "%s has main character energy. ✨",
                     "Developed with ❤️ by elysety"
             };
 
@@ -115,7 +110,6 @@ public class Main {
                     Member target = users.get(rand.nextInt(users.size()));
                     String raw = phrases[rand.nextInt(phrases.length)];
                     String status = raw.contains("%s") ? String.format(raw, target.getEffectiveName()) : raw;
-
                     jda.getPresence().setActivity(Activity.customStatus(status));
                 }
             });
