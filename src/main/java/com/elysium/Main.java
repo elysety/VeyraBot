@@ -11,6 +11,8 @@ import net.dv8tion.jda.api.entities.Guild;
 import net.dv8tion.jda.api.utils.ChunkingFilter;
 import net.dv8tion.jda.api.utils.MemberCachePolicy;
 import net.dv8tion.jda.api.interactions.commands.build.SlashCommandData;
+import com.sun.net.httpserver.HttpServer;
+import java.net.InetSocketAddress;
 
 import java.util.List;
 import java.util.Random;
@@ -19,8 +21,25 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 public class Main {
-    public static void main(String[] args) throws InterruptedException {
-        String token = "MTQ1NDYxNzQzNzI0ODE2MzkxMA.GrutHe.EM7HdKb3BdlLqqgIDQPTbgdijKwGMiusvQgq3M";
+    public static void main(String[] args) throws InterruptedException, java.io.IOException {
+        // Look for "TOKEN" in Render's environment variables
+        String token = System.getenv("TOKEN");
+        String testGuildId = System.getenv("GUILD_ID");
+
+        if (token == null || token.isEmpty()) {
+            System.err.println("ERROR: TOKEN environment variable not set!");
+            return;
+        }
+
+        // Dummy Web Server for Render (keeps the service alive)
+        HttpServer server = HttpServer.create(new InetSocketAddress(8080), 0);
+        server.createContext("/", exchange -> {
+            String response = "Veyra 1.0 is online.";
+            exchange.sendResponseHeaders(200, response.length());
+            exchange.getResponseBody().write(response.getBytes());
+            exchange.getResponseBody().close();
+        });
+        server.start();
 
         CommandManager manager = new CommandManager();
         initCommands(manager);
@@ -37,16 +56,17 @@ public class Main {
                 .map(ICommand::getData)
                 .collect(Collectors.toList());
 
-        // Clear global command cache and sync to local guild
+        // Wipe global commands to sync correctly
         jda.updateCommands().queue();
 
-        Guild devGuild = jda.getGuildById("1361471387528855713");
-        if (devGuild != null) {
-            devGuild.updateCommands().addCommands(commandData).queue();
+        if (testGuildId != null) {
+            Guild devGuild = jda.getGuildById(testGuildId);
+            if (devGuild != null) {
+                devGuild.updateCommands().addCommands(commandData).queue();
+            }
         }
 
         runStatusCycle(jda);
-
         System.out.println(">>> Veyra 1.0 is now active | Dev: elysety");
     }
 
