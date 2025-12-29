@@ -11,6 +11,9 @@ import net.dv8tion.jda.api.interactions.commands.OptionType;
 import net.dv8tion.jda.api.interactions.commands.build.Commands;
 import net.dv8tion.jda.api.interactions.commands.build.SlashCommandData;
 import org.jetbrains.annotations.NotNull;
+import org.bson.Document;
+import com.mongodb.client.MongoCollection;
+import com.mongodb.client.model.ReplaceOptions;
 
 import java.awt.*;
 import java.util.ArrayList;
@@ -32,7 +35,6 @@ public class CommandManager extends ListenerAdapter {
     @Override
     public void onSlashCommandInteraction(@NotNull SlashCommandInteractionEvent event) {
         ICommand cmd = commands.get(event.getName());
-
         if (cmd != null) {
             cmd.execute(event);
         } else {
@@ -40,31 +42,33 @@ public class CommandManager extends ListenerAdapter {
         }
     }
 
-    public static class HelpCommand implements ICommand {
-        private final CommandManager manager;
+    // --- LOG SETUP COMMAND ---
+    public static class SetupLogsCommand implements ICommand {
+        private final MongoCollection<Document> collection;
 
-        public HelpCommand(CommandManager manager) {
-            this.manager = manager;
+        public SetupLogsCommand(MongoCollection<Document> collection) {
+            this.collection = collection;
         }
 
         @Override
         public SlashCommandData getData() {
-            return Commands.slash("help", "See a list of all bot commands");
+            return Commands.slash("setup-logs", "Set the channel for detailed server logs")
+                    .addOption(OptionType.CHANNEL, "channel", "The log channel", true)
+                    .setDefaultPermissions(DefaultMemberPermissions.enabledFor(Permission.ADMINISTRATOR))
+                    .setContexts(InteractionContextType.GUILD);
         }
 
         @Override
         public void execute(SlashCommandInteractionEvent event) {
-            EmbedBuilder embed = new EmbedBuilder()
-                    .setTitle("🤖 Bot Help Menu")
-                    .setDescription("Here is a list of all available slash commands:")
-                    .setColor(Color.CYAN)
-                    .setThumbnail(event.getJDA().getSelfUser().getEffectiveAvatarUrl());
+            String channelId = event.getOption("channel").getAsChannel().getId();
+            String guildId = event.getGuild().getId();
 
-            for (ICommand cmd : manager.getCommands()) {
-                embed.addField("/" + cmd.getData().getName(), cmd.getData().getDescription(), false);
-            }
+            Document query = new Document("guildId", guildId);
+            Document update = new Document("guildId", guildId).append("logChannelId", channelId);
 
-            event.replyEmbeds(embed.build()).queue();
+            collection.replaceOne(query, update, new ReplaceOptions().upsert(true));
+
+            event.reply("✅ Detailed logs will now be sent to <#" + channelId + ">").queue();
         }
     }
 
@@ -84,13 +88,13 @@ public class CommandManager extends ListenerAdapter {
             String reason = event.getOption("reason") != null ? event.getOption("reason").getAsString() : "No reason provided";
 
             if (target == null) {
-                event.reply("User not found in this server.").setEphemeral(true).queue();
+                event.reply("User not found.").setEphemeral(true).queue();
                 return;
             }
 
             target.kick().reason(reason).queue(
                     success -> event.reply("Successfully kicked " + target.getUser().getName()).queue(),
-                    error -> event.reply("Failed to kick: " + error.getMessage()).setEphemeral(true).queue()
+                    error -> event.reply("Failed: " + error.getMessage()).setEphemeral(true).queue()
             );
         }
     }

@@ -74,7 +74,7 @@ public class Main {
         manager.addCommand(new CommandManager.KickCommand());
         manager.addCommand(new BanCommand());
         manager.addCommand(new TimeoutCommand());
-        manager.addCommand(new CommandManager.HelpCommand(manager));
+        manager.addCommand(new CommandManager.HelpCommand(manager   ));
         manager.addCommand(new RoleCommand());
         manager.addCommand(new PurgeCommand());
         manager.addCommand(new ServerInfoCommand());
