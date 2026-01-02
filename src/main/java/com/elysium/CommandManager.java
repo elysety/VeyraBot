@@ -45,31 +45,37 @@ public class CommandManager extends ListenerAdapter {
         if (cmd != null) {
             cmd.execute(event);
         } else {
-            event.reply("Command not recognized.").setEphemeral(true).queue();
+            event.reply("❌ Command not recognized.").setEphemeral(true).queue();
         }
     }
 
     @Override
     public void onModalInteraction(@NotNull ModalInteractionEvent event) {
+        Member member = event.getMember();
+        if (member == null || member.getVoiceState() == null || member.getVoiceState().getChannel() == null) {
+            event.reply("❌ You must be in the voice channel to do that.").setEphemeral(true).queue();
+            return;
+        }
+
+        VoiceChannel vc = member.getVoiceState().getChannel().asVoiceChannel();
+
         if (event.getModalId().equals("vc:rename_modal")) {
-            VoiceChannel vc = (VoiceChannel) event.getChannel();
-            String newName = Objects.requireNonNull(event.getValue("new_name")).getAsString();
+            String newName = event.getValue("new_name").getAsString();
             vc.getManager().setName(newName).queue(s ->
                     event.reply("✅ Channel renamed to: **" + newName + "**").setEphemeral(true).queue());
         }
 
         if (event.getModalId().equals("vc:limit_modal")) {
-            VoiceChannel vc = (VoiceChannel) event.getChannel();
             try {
-                int limit = Integer.parseInt(Objects.requireNonNull(event.getValue("limit_value")).getAsString());
+                int limit = Integer.parseInt(event.getValue("limit_value").getAsString());
                 if (limit < 0 || limit > 99) {
                     event.reply("❌ Limit must be 0-99.").setEphemeral(true).queue();
                     return;
                 }
                 vc.getManager().setUserLimit(limit).queue(s ->
                         event.reply("👥 User limit set to: **" + (limit == 0 ? "Unlimited" : limit) + "**").setEphemeral(true).queue());
-            } catch (Exception e) {
-                event.reply("❌ Invalid number.").setEphemeral(true).queue();
+            } catch (NumberFormatException e) {
+                event.reply("❌ That isn't a valid number.").setEphemeral(true).queue();
             }
         }
     }
@@ -77,116 +83,108 @@ public class CommandManager extends ListenerAdapter {
     @Override
     public void onButtonInteraction(@NotNull ButtonInteractionEvent event) {
         if (!event.getComponentId().startsWith("vc:")) return;
-        VoiceChannel vc = (VoiceChannel) event.getChannel();
+
+        Member member = event.getMember();
+        if (member == null || member.getVoiceState() == null || member.getVoiceState().getChannel() == null) {
+            event.reply("❌ You aren't in a voice channel.").setEphemeral(true).queue();
+            return;
+        }
+
+        VoiceChannel vc = member.getVoiceState().getChannel().asVoiceChannel();
 
         if (event.getComponentId().equals("vc:claim")) {
-            boolean ownerInChannel = vc.getMembers().stream().anyMatch(m -> vc.getPermissionOverride(m) != null && Objects.requireNonNull(vc.getPermissionOverride(m)).getAllowed().contains(Permission.MANAGE_CHANNEL));
+            boolean ownerInChannel = vc.getMembers().stream().anyMatch(m -> vc.getPermissionOverride(m) != null &&
+                    vc.getPermissionOverride(m).getAllowed().contains(Permission.MANAGE_CHANNEL));
+
             if (ownerInChannel) {
-                event.reply("❌ The owner is still in the channel!").setEphemeral(true).queue();
+                event.reply("❌ The owner is still here!").setEphemeral(true).queue();
                 return;
             }
-            vc.getManager().putMemberPermissionOverride(event.getMember().getIdLong(), EnumSet.of(Permission.MANAGE_CHANNEL, Permission.VIEW_CHANNEL, Permission.VOICE_CONNECT, Permission.VOICE_MOVE_OTHERS), null).queue();
+            vc.getManager().putMemberPermissionOverride(member.getIdLong(), EnumSet.of(Permission.MANAGE_CHANNEL, Permission.VIEW_CHANNEL, Permission.VOICE_CONNECT), null).queue();
             event.reply("👑 You are now the owner!").queue();
             return;
         }
 
-        boolean isOwner = vc.getPermissionOverride(event.getMember()) != null &&
-                Objects.requireNonNull(vc.getPermissionOverride(event.getMember())).getAllowed().contains(Permission.MANAGE_CHANNEL);
+        boolean isOwner = vc.getPermissionOverride(member) != null &&
+                vc.getPermissionOverride(member).getAllowed().contains(Permission.MANAGE_CHANNEL);
 
         if (!isOwner) {
-            event.reply("❌ Only the owner can manage this channel.").setEphemeral(true).queue();
+            event.reply("❌ Only the owner can use these controls.").setEphemeral(true).queue();
             return;
         }
 
         switch (event.getComponentId()) {
             case "vc:lock" -> {
                 vc.getManager().putRolePermissionOverride(event.getGuild().getPublicRole().getIdLong(), null, EnumSet.of(Permission.VOICE_CONNECT)).queue();
-                event.reply("🔒 Locked").setEphemeral(true).queue();
+                event.reply("🔒 Channel locked.").setEphemeral(true).queue();
             }
             case "vc:unlock" -> {
                 vc.getManager().putRolePermissionOverride(event.getGuild().getPublicRole().getIdLong(), EnumSet.of(Permission.VOICE_CONNECT), null).queue();
-                event.reply("🔓 Unlocked").setEphemeral(true).queue();
+                event.reply("🔓 Channel unlocked.").setEphemeral(true).queue();
             }
             case "vc:rename" -> {
                 TextInput nameInput = TextInput.create("new_name", "New Name", TextInputStyle.SHORT).build();
-                event.replyModal(Modal.create("vc:rename_modal", "Rename").addComponents(ActionRow.of(nameInput)).build()).queue();
+                event.replyModal(Modal.create("vc:rename_modal", "Rename Channel").addComponents(ActionRow.of(nameInput)).build()).queue();
             }
             case "vc:limit" -> {
-                TextInput limitInput = TextInput.create("limit_value", "Limit (0-99)", TextInputStyle.SHORT).setPlaceholder("0 for unlimited").build();
+                TextInput limitInput = TextInput.create("limit_value", "Limit (0-99)", TextInputStyle.SHORT).setPlaceholder("0 = Unlimited").build();
                 event.replyModal(Modal.create("vc:limit_modal", "Set Limit").addComponents(ActionRow.of(limitInput)).build()).queue();
             }
             case "vc:hide" -> {
                 vc.getManager().putRolePermissionOverride(event.getGuild().getPublicRole().getIdLong(), null, EnumSet.of(Permission.VIEW_CHANNEL)).queue();
-                event.reply("👻 Hidden").setEphemeral(true).queue();
+                event.reply("👻 Channel hidden.").setEphemeral(true).queue();
             }
-        }
-    }
-
-    public static class PingCommand implements ICommand {
-        @Override public SlashCommandData getData() { return Commands.slash("ping", "Check latency"); }
-        @Override public void execute(SlashCommandInteractionEvent event) {
-            event.reply("Pinging...").queue(m -> m.editOriginal("Gateway: " + event.getJDA().getGatewayPing() + "ms").queue());
-        }
-    }
-
-    public static class PurgeCommand implements ICommand {
-        @Override public SlashCommandData getData() { return Commands.slash("purge", "Clear messages").addOption(OptionType.INTEGER, "amount", "1-100", true).setDefaultPermissions(DefaultMemberPermissions.enabledFor(Permission.MESSAGE_MANAGE)); }
-        @Override public void execute(SlashCommandInteractionEvent event) {
-            int amount = event.getOption("amount").getAsInt();
-            event.getChannel().getIterableHistory().takeAsync(amount).thenAccept(messages -> {
-                event.getChannel().purgeMessages(messages);
-                event.reply("🧹 Deleted " + messages.size()).setEphemeral(true).queue();
-            });
-        }
-    }
-
-    public static class TimeoutCommand implements ICommand {
-        @Override public SlashCommandData getData() { return Commands.slash("timeout", "Timeout user").addOption(OptionType.USER, "target", "User", true).addOption(OptionType.INTEGER, "minutes", "Mins", true).setDefaultPermissions(DefaultMemberPermissions.enabledFor(Permission.MODERATE_MEMBERS)); }
-        @Override public void execute(SlashCommandInteractionEvent event) {
-            Member target = event.getOption("target").getAsMember();
-            int mins = event.getOption("minutes").getAsInt();
-            if (target != null) target.timeoutFor(Duration.ofMinutes(mins)).queue(s -> event.reply("🔇 Done").queue());
         }
     }
 
     public static class HelpCommand implements ICommand {
         private final CommandManager manager;
         public HelpCommand(CommandManager manager) { this.manager = manager; }
-        @Override public SlashCommandData getData() { return Commands.slash("help", "Help menu"); }
+        @Override public SlashCommandData getData() { return Commands.slash("help", "View all commands"); }
         @Override public void execute(SlashCommandInteractionEvent event) {
-            EmbedBuilder eb = new EmbedBuilder().setTitle("Help").setColor(Color.DARK_GRAY);
+            EmbedBuilder eb = new EmbedBuilder().setTitle("Veyra Help").setColor(new Color(43, 45, 49));
             manager.getCommands().forEach(c -> eb.addField("/" + c.getData().getName(), c.getData().getDescription(), false));
             event.replyEmbeds(eb.build()).queue();
         }
     }
 
-    public static class KickCommand implements ICommand {
-        @Override public SlashCommandData getData() { return Commands.slash("kick", "Kick").addOption(OptionType.USER, "target", "User", true).setDefaultPermissions(DefaultMemberPermissions.enabledFor(Permission.KICK_MEMBERS)); }
+    public static class PingCommand implements ICommand {
+        @Override public SlashCommandData getData() { return Commands.slash("ping", "Check bot speed"); }
         @Override public void execute(SlashCommandInteractionEvent event) {
-            Member t = event.getOption("target").getAsMember();
-            if (t != null) t.kick().queue(s -> event.reply("✅ Kicked").queue());
+            event.reply("🏓 Pong! " + event.getJDA().getGatewayPing() + "ms").queue();
+        }
+    }
+
+    public static class PurgeCommand implements ICommand {
+        @Override public SlashCommandData getData() { return Commands.slash("purge", "Delete messages").addOption(OptionType.INTEGER, "amount", "1-100", true).setDefaultPermissions(DefaultMemberPermissions.enabledFor(Permission.MESSAGE_MANAGE)); }
+        @Override public void execute(SlashCommandInteractionEvent event) {
+            int amount = event.getOption("amount").getAsInt();
+            event.getChannel().getIterableHistory().takeAsync(amount).thenAccept(messages -> {
+                event.getChannel().purgeMessages(messages);
+                event.reply("🧹 Deleted " + messages.size() + " messages.").setEphemeral(true).queue();
+            });
         }
     }
 
     public static class SetupLogsCommand implements ICommand {
         private final MongoCollection<Document> coll;
         public SetupLogsCommand(MongoCollection<Document> coll) { this.coll = coll; }
-        @Override public SlashCommandData getData() { return Commands.slash("setup-logs", "Logs").addOption(OptionType.CHANNEL, "channel", "Ch", true).setDefaultPermissions(DefaultMemberPermissions.enabledFor(Permission.ADMINISTRATOR)); }
+        @Override public SlashCommandData getData() { return Commands.slash("setup-logs", "Set log channel").addOption(OptionType.CHANNEL, "channel", "Channel", true).setDefaultPermissions(DefaultMemberPermissions.enabledFor(Permission.ADMINISTRATOR)); }
         @Override public void execute(SlashCommandInteractionEvent event) {
             String id = event.getOption("channel").getAsChannel().getId();
             coll.replaceOne(new Document("guildId", event.getGuild().getId()), new Document("guildId", event.getGuild().getId()).append("logChannelId", id), new ReplaceOptions().upsert(true));
-            event.reply("✅ Set").queue();
+            event.reply("✅ Logs set to <#" + id + ">").queue();
         }
     }
 
     public static class SetupJTCCommand implements ICommand {
         private final MongoCollection<Document> coll;
         public SetupJTCCommand(MongoCollection<Document> coll) { this.coll = coll; }
-        @Override public SlashCommandData getData() { return Commands.slash("setup-jtc", "JTC").addOption(OptionType.CHANNEL, "channel", "Ch", true).setDefaultPermissions(DefaultMemberPermissions.enabledFor(Permission.ADMINISTRATOR)); }
+        @Override public SlashCommandData getData() { return Commands.slash("setup-jtc", "Set JTC Hub").addOption(OptionType.CHANNEL, "channel", "Channel", true).setDefaultPermissions(DefaultMemberPermissions.enabledFor(Permission.ADMINISTRATOR)); }
         @Override public void execute(SlashCommandInteractionEvent event) {
             String id = event.getOption("channel").getAsChannel().getId();
             coll.replaceOne(new Document("guildId", event.getGuild().getId()), new Document("guildId", event.getGuild().getId()).append("jtcHubId", id), new ReplaceOptions().upsert(true));
-            event.reply("✅ Set").queue();
+            event.reply("✅ JTC Hub set to <#" + id + ">").queue();
         }
     }
 }
